@@ -6,6 +6,10 @@ function getToken() {
   return localStorage.getItem("expense_tracker_token");
 }
 
+export function hasAuthToken() {
+  return Boolean(getToken());
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Content-Type", "application/json");
@@ -15,8 +19,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
   if (response.status === 401) {
     localStorage.removeItem("expense_tracker_token");
-    window.location.href = "/";
-    throw new Error("Session expired. Redirecting to login.");
+    window.dispatchEvent(new CustomEvent("expense-auth-expired"));
+    throw new Error("Session expired. Please sign in again.");
   }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: "Request failed" }));

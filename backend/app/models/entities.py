@@ -98,3 +98,14 @@ class CategoryRule(Base):
     merchant_pattern: Mapped[str] = mapped_column(String(255), index=True)
     category: Mapped[str] = mapped_column(String(128), index=True)
 
+
+class GmailWatch(Base):
+    __tablename__ = "gmail_watches"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    watch_expiration: Mapped[datetime] = mapped_column(DateTime)
+    history_id: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

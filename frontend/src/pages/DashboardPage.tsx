@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Area,
@@ -57,6 +57,39 @@ const fullCurrencyFormatter = new Intl.NumberFormat("en-IN", {
 type QuickRange = "today" | "last7" | "month" | "lastMonth";
 type Toast = { id: number; tone: "success" | "error" | "info"; message: string };
 type MerchantSort = "amount" | "name";
+type DashboardCacheEntry = {
+  analytics: AnalyticsSummary;
+  transactions: Transaction[];
+  lastRefreshed: string;
+};
+type DashboardViewState = {
+  bank: string;
+  startDate: string;
+  endDate: string;
+  currentPage: number;
+  pageSize: number;
+  darkMode: boolean;
+  merchantSort: MerchantSort;
+};
+
+const dashboardCache = new Map<string, DashboardCacheEntry>();
+let dashboardViewState: DashboardViewState | null = null;
+
+function dashboardCacheKey(bank: string, startDate: string, endDate: string) {
+  return new URLSearchParams({ bank, start_date: startDate, end_date: endDate }).toString();
+}
+
+function getInitialDashboardViewState(profile?: UserProfile | null): DashboardViewState {
+  return dashboardViewState ?? {
+    bank: profile?.default_bank ?? "HDFC",
+    startDate: monthStart(),
+    endDate: today(),
+    currentPage: 1,
+    pageSize: 10,
+    darkMode: document.documentElement.dataset.theme === "dark",
+    merchantSort: "amount",
+  };
+}
 
 function dateInputValue(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -129,6 +162,21 @@ function getRangePreset(startDate: string, endDate: string): QuickRange | "custo
   return "custom";
 }
 
+function getPresetLabel(preset: QuickRange | "custom", startDate: string, endDate: string): string {
+  switch (preset) {
+    case "today":
+      return "Today";
+    case "last7":
+      return "Last 7 Days";
+    case "month":
+      return "This Month";
+    case "lastMonth":
+      return "Last Month";
+    default:
+      return `${displayDate(startDate)} - ${displayDate(endDate)}`;
+  }
+}
+
 function buildCreditDebitData(transactions: Transaction[]) {
   const grouped = new Map<string, { label: string; credit: number; debit: number }>();
   transactions.forEach((transaction) => {
@@ -191,28 +239,33 @@ function createSummary(analytics: AnalyticsSummary | null, transactions: Transac
 }
 
 export function DashboardPage({ profile }: { profile?: UserProfile | null }) {
-  const [bank, setBank] = useState(profile?.default_bank ?? "HDFC");
-  const [startDate, setStartDate] = useState(monthStart());
-  const [endDate, setEndDate] = useState(today());
-  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const initialViewState = getInitialDashboardViewState(profile);
+  const initialCache = dashboardCache.get(dashboardCacheKey(initialViewState.bank, initialViewState.startDate, initialViewState.endDate));
+  const [bank, setBank] = useState(initialViewState.bank);
+  const [startDate, setStartDate] = useState(initialViewState.startDate);
+  const [endDate, setEndDate] = useState(initialViewState.endDate);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(initialCache?.analytics ?? null);
+  const [transactions, setTransactions] = useState<Transaction[]>(initialCache?.transactions ?? []);
   const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
-  const [darkMode, setDarkMode] = useState(false);
-  const [merchantSort, setMerchantSort] = useState<MerchantSort>("amount");
+  const [loading, setLoading] = useState(!initialCache);
+  const [currentPage, setCurrentPage] = useState(initialViewState.currentPage);
+  const [pageSize, setPageSize] = useState(initialViewState.pageSize);
+  const [lastRefreshed, setLastRefreshed] = useState<string | null>(initialCache?.lastRefreshed ?? null);
+  const [darkMode, setDarkMode] = useState(initialViewState.darkMode);
+  const [merchantSort, setMerchantSort] = useState<MerchantSort>(initialViewState.merchantSort);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const params = useMemo(() => new URLSearchParams({ bank, start_date: startDate, end_date: endDate }), [bank, startDate, endDate]);
+  const paramKey = params.toString();
+  const activeRequestKey = useRef(paramKey);
+  activeRequestKey.current = paramKey;
   const selectedPreset = getRangePreset(startDate, endDate);
   const totalPages = Math.max(1, Math.ceil(transactions.length / pageSize));
   const pageStartIndex = (currentPage - 1) * pageSize;
   const pageEndIndex = Math.min(pageStartIndex + pageSize, transactions.length);
   const visibleTransactions = transactions.slice(pageStartIndex, pageEndIndex);
   const firstVisibleTransaction = transactions.length === 0 ? 0 : pageStartIndex + 1;
-  const dateRangeLabel = `${displayDate(startDate)} - ${displayDate(endDate)}`;
+  const dateRangeLabel = getPresetLabel(selectedPreset, startDate, endDate);
   const creditDebitData = useMemo(() => buildCreditDebitData(transactions), [transactions]);
   const monthlyComparison = useMemo(() => buildMonthlyComparison(transactions), [transactions]);
   const budgetInsights = useMemo(() => buildBudgetInsights(analytics?.category_breakdown ?? []), [analytics]);
@@ -254,14 +307,33 @@ export function DashboardPage({ profile }: { profile?: UserProfile | null }) {
     setEndDate(today());
   }
 
-  async function load() {
+  function hydrateFromCache(cache: DashboardCacheEntry) {
+    setAnalytics(cache.analytics);
+    setTransactions(cache.transactions);
+    setLastRefreshed(cache.lastRefreshed);
+    setStatus("");
+    setLoading(false);
+  }
+
+  async function load({ force = false }: { force?: boolean } = {}) {
+    const requestKey = paramKey;
+    const cached = dashboardCache.get(requestKey);
+    if (!force && cached) {
+      hydrateFromCache(cached);
+      return;
+    }
+
     setLoading(true);
     setStatus("Refreshing dashboard");
     try {
-      const [summary, rows] = await Promise.all([getAnalytics(params), getTransactions(params)]);
+      const requestParams = new URLSearchParams(params);
+      const [summary, rows] = await Promise.all([getAnalytics(requestParams), getTransactions(requestParams)]);
+      if (activeRequestKey.current !== requestKey) return;
+      const refreshedAt = new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      dashboardCache.set(requestKey, { analytics: summary, transactions: rows, lastRefreshed: refreshedAt });
       setAnalytics(summary);
       setTransactions(rows);
-      setLastRefreshed(new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }));
+      setLastRefreshed(refreshedAt);
       setStatus("");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to load dashboard";
@@ -282,7 +354,7 @@ export function DashboardPage({ profile }: { profile?: UserProfile | null }) {
         start_date: startDate,
         end_date: endDate,
       });
-      await load();
+      await load({ force: true });
       showToast(`Refresh complete: ${result.created} new transactions`, "success");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Dashboard refresh failed";
@@ -324,12 +396,24 @@ export function DashboardPage({ profile }: { profile?: UserProfile | null }) {
   }, [darkMode]);
 
   useEffect(() => {
+    dashboardViewState = {
+      bank,
+      startDate,
+      endDate,
+      currentPage,
+      pageSize,
+      darkMode,
+      merchantSort,
+    };
+  }, [bank, startDate, endDate, currentPage, pageSize, darkMode, merchantSort]);
+
+  useEffect(() => {
     load().catch((err) => setStatus(err.message));
-  }, [params.toString()]);
+  }, [paramKey]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [params.toString(), pageSize]);
+  }, [paramKey, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -339,7 +423,7 @@ export function DashboardPage({ profile }: { profile?: UserProfile | null }) {
     const updated = await updateTransaction(transaction.id, { category });
     setTransactions((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     showToast("Category updated", "success");
-    await load();
+    await load({ force: true });
   }
 
   return (

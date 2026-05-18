@@ -1,6 +1,7 @@
 .github/
 .gitignore
 .DS_Store
+.playwright-mcp/
 
 # Python
 *.py[cod]
