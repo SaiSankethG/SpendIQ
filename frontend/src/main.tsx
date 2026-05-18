@@ -74,7 +74,7 @@ function App() {
 
   const content = useMemo(() => {
     if (!profile) return null;
-    if (page === "dashboard") return <DashboardPage />;
+    if (page === "dashboard") return <DashboardPage profile={profile} />;
     if (page === "imports") return <ImportsPage />;
     if (page === "budgets") return <BudgetsPage />;
     if (page === "settings") return <SettingsPage />;
