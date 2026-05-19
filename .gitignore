@@ -57,3 +57,10 @@ docker-compose.override.yml
 
 # Playwright
 playwright-report/
+
+# Ignore all markdown files
+**/*.md
+
+# Keep README files
+!README.md
+!**/README.md

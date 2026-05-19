@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 from datetime import date, datetime, timedelta
@@ -11,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.entities import GmailMessage, OAuthToken
+from app.models.entities import GmailMessage, GmailWatch, OAuthToken, User
 from app.parsers.registry import parser_registry
 from app.schemas.transactions import GmailSyncRequest, TransactionCreate
 from app.services.category_service import category_service
@@ -156,10 +157,131 @@ class GmailService:
         }
 
     def watch(self, db: Session, user_id: str) -> dict[str, str]:
+        """Register this user's mailbox for Gmail watch notifications via Pub/Sub."""
         token = db.query(OAuthToken).filter(OAuthToken.user_id == user_id).one_or_none()
         if not token:
             return {"status": "not_connected"}
-        return {"status": "pending_cloud_setup"}
+        
+        settings = get_settings()
+        if not settings.gmail_pubsub_topic:
+            logger.warning("Gmail watch requested but GMAIL_PUBSUB_TOPIC is not configured")
+            return {"status": "pending_cloud_setup", "detail": "GMAIL_PUBSUB_TOPIC not configured"}
+        
+        try:
+            client_id, client_secret = self._get_client_credentials(settings)
+            credentials = Credentials(
+                token=token.access_token,
+                refresh_token=token.refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=token.scopes.split(),
+            )
+            gmail = build("gmail", "v1", credentials=credentials)
+            
+            # Call Gmail watch API
+            watch_response = gmail.users().watch(
+                userId="me",
+                body={"topicName": settings.gmail_pubsub_topic}
+            ).execute()
+            
+            # Store watch state in database
+            expiration_ms = watch_response.get("expiration")
+            history_id = watch_response.get("historyId", "")
+            
+            existing_watch = db.query(GmailWatch).filter(GmailWatch.user_id == user_id).one_or_none()
+            if existing_watch:
+                existing_watch.watch_expiration = datetime.fromtimestamp(int(expiration_ms) / 1000)
+                existing_watch.history_id = history_id
+                existing_watch.updated_at = datetime.utcnow()
+            else:
+                watch = GmailWatch(
+                    user_id=user_id,
+                    watch_expiration=datetime.fromtimestamp(int(expiration_ms) / 1000),
+                    history_id=history_id,
+                )
+                db.add(watch)
+            
+            db.commit()
+            logger.info("Gmail watch registered for user %s, expiration: %s", user_id, expiration_ms)
+            return {"status": "watch_enabled", "expiration": expiration_ms}
+            
+        except RefreshError as exc:
+            logger.exception("Gmail watch failed for user %s due to invalid or revoked OAuth token", user_id)
+            raise HTTPException(
+                status_code=401,
+                detail="Google authorization is no longer valid. Please reconnect your Gmail account.",
+            ) from exc
+        except Exception as exc:
+            logger.exception("Gmail watch registration failed for user %s", user_id)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to register Gmail watch: {str(exc)}",
+            ) from exc
+
+    def process_pubsub_message(self, db: Session, message_data: dict) -> dict[str, str]:
+        """Process an incoming Pub/Sub message from Gmail watch."""
+        try:
+            # Pub/Sub message data is base64 encoded
+            payload = message_data.get("message", {})
+            data_b64 = payload.get("data", "")
+            
+            if not data_b64:
+                logger.warning("Received Pub/Sub message with no data")
+                return {"status": "ignored", "reason": "no_data"}
+            
+            # Decode the Gmail watch notification
+            notification = json.loads(base64.b64decode(data_b64))
+            user_id = notification.get("userId")
+            history_id = notification.get("historyId")
+            
+            if not user_id:
+                logger.warning("Received Pub/Sub message with no userId")
+                return {"status": "ignored", "reason": "no_user_id"}
+            
+            # Get the user's Gmail watch record
+            watch = db.query(GmailWatch).filter(GmailWatch.user_id == user_id).one_or_none()
+            if not watch:
+                logger.warning("Received Pub/Sub message for user %s but no watch record found", user_id)
+                return {"status": "ignored", "reason": "no_watch_record"}
+            
+            # Update the history ID
+            watch.history_id = history_id
+            watch.updated_at = datetime.utcnow()
+            db.commit()
+            
+            # Trigger a sync with the new history
+            token = db.query(OAuthToken).filter(OAuthToken.user_id == user_id).one_or_none()
+            if not token:
+                logger.warning("Received Pub/Sub message for user %s but no OAuth token", user_id)
+                return {"status": "ignored", "reason": "no_token"}
+            
+            settings = get_settings()
+            client_id, client_secret = self._get_client_credentials(settings)
+            credentials = Credentials(
+                token=token.access_token,
+                refresh_token=token.refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=token.scopes.split(),
+            )
+            gmail = build("gmail", "v1", credentials=credentials)
+            
+            # Get the user's default bank from profile
+            user = db.query(User).filter_by(id=user_id).one_or_none()
+            bank = user.default_bank if user else "HDFC"
+            
+            # Fetch messages since last sync
+            request = GmailSyncRequest(mode="last_n", last_n=10, bank=bank)
+            sync_result = self.sync(db, user_id, request)
+            
+            logger.info("Processed Pub/Sub message for user %s, sync result: %s", user_id, sync_result)
+            return {"status": "processed", "sync_result": sync_result}
+            
+        except Exception as exc:
+            logger.exception("Failed to process Pub/Sub message")
+            return {"status": "error", "detail": str(exc)}
 
     def _extract_text(self, message: dict) -> str:
         import base64

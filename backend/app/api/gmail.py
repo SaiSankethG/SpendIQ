@@ -21,6 +21,10 @@ def watch_gmail(db: Session = Depends(get_db), user: User = Depends(get_current_
 
 
 @router.post("/webhook")
-def gmail_webhook(payload: dict):
-    return {"status": "accepted", "detail": "Wire this endpoint to Google Pub/Sub push delivery."}
+def gmail_webhook(payload: dict, db: Session = Depends(get_db)):
+    """
+    Webhook endpoint for Google Pub/Sub push delivery.
+    This receives notifications when new emails arrive.
+    """
+    return gmail_service.process_pubsub_message(db, payload)
 
