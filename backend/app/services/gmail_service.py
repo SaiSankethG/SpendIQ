@@ -245,12 +245,6 @@ class GmailService:
         db.commit()
         logger.info("Cleanup finished for user %s: scanned=%s ignored=%s", user_id, scanned, ignored)
         return {"scanned": scanned, "ignored": ignored}
-        except Exception as exc:
-            logger.exception("Gmail watch registration failed for user %s", user_id)
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to register Gmail watch: {str(exc)}",
-            ) from exc
 
     def process_pubsub_message(self, db: Session, message_data: dict) -> dict[str, str]:
         """Process an incoming Pub/Sub message from Gmail watch."""
