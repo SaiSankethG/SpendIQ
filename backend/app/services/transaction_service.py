@@ -24,7 +24,7 @@ class TransactionService:
         start_date: date | None = None,
         end_date: date | None = None,
     ) -> list[Transaction]:
-        query: Select[tuple[Transaction]] = select(Transaction).where(Transaction.user_id == user_id)
+        query: Select[tuple[Transaction]] = select(Transaction).where(Transaction.user_id == user_id, Transaction.is_ignored.is_(False))
         if bank:
             query = query.where(Transaction.bank == bank)
         if source:
@@ -49,4 +49,3 @@ class TransactionService:
 
 
 transaction_service = TransactionService()
-

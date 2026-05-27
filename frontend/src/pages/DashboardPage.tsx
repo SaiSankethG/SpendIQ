@@ -39,7 +39,7 @@ import {
   UserCircle,
   WalletCards,
 } from "lucide-react";
-import { getAnalytics, getTransactions, syncGmail, updateTransaction } from "../api/client";
+import { cleanupGmail, getAnalytics, getTransactions, syncGmail, updateTransaction } from "../api/client";
 import { PushNotificationControl } from "../components/PushNotificationControl";
 import type { AnalyticsSummary, ChartPoint, Transaction, UserProfile } from "../types";
 
@@ -48,6 +48,10 @@ const pageSizeOptions = [10, 25, 50];
 const currencyFormatter = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 1,
   notation: "compact",
+});
+const indianCurrencyFormatter = new Intl.NumberFormat("en-IN", {
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 2,
 });
 const fullCurrencyFormatter = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
@@ -130,6 +134,10 @@ function formatCompactCurrency(value: number) {
   return `₹${currencyFormatter.format(Math.abs(value))}`;
 }
 
+function formatIndianCurrency(value: number) {
+  return `₹${indianCurrencyFormatter.format(Math.abs(value))}`;
+}
+
 function formatCurrency(value: number) {
   return `₹${fullCurrencyFormatter.format(Math.abs(value))}`;
 }
@@ -160,6 +168,20 @@ function getRangePreset(startDate: string, endDate: string): QuickRange | "custo
   if (startDate === monthStart() && endDate === today()) return "month";
   if (startDate === lastMonthStart() && endDate === lastMonthEnd()) return "lastMonth";
   return "custom";
+}
+
+function extractSender(rawText: string) {
+  const match = rawText.match(/\bsender:\s*(.+?)(?:\s*\(vpa:|\.|\n|$)/i);
+  return match?.[1]?.trim() ?? "";
+}
+
+function getDisplayMerchant(transaction: Transaction) {
+  const sender = transaction.source === "gmail" ? extractSender(transaction.raw_text) : "";
+  const merchant = transaction.merchant.trim();
+  const isUnknownMerchant = /^(unknown merchant|unknown|n\/a|na)$/i.test(merchant);
+
+  if (isUnknownMerchant && sender) return sender;
+  return merchant || sender || "Unknown Merchant";
 }
 
 function getPresetLabel(preset: QuickRange | "custom", startDate: string, endDate: string): string {
@@ -235,10 +257,10 @@ function createSummary(analytics: AnalyticsSummary | null, transactions: Transac
   const topCategory = analytics.top_category ?? "uncategorized spend";
   const topMerchant = analytics.top_merchant ?? analytics.top_merchants[0]?.label ?? "your top merchant";
   const tone = net >= 0 ? "cash-positive" : "spend-heavy";
-  return `This period is ${tone}: ${formatCompactCurrency(income)} credited against ${formatCompactCurrency(spend)} spent. ${topCategory} leads category spend, with ${topMerchant} standing out in merchant activity.`;
+  return `This period is ${tone}: ${formatIndianCurrency(income)} credited against ${formatIndianCurrency(spend)} spent. ${topCategory} leads category spend, with ${topMerchant} standing out in merchant activity.`;
 }
 
-export function DashboardPage({ profile }: { profile?: UserProfile | null }) {
+export function DashboardPage({ profile, onOpenProfile }: { profile?: UserProfile | null; onOpenProfile?: () => void }) {
   const initialViewState = getInitialDashboardViewState(profile);
   const initialCache = dashboardCache.get(dashboardCacheKey(initialViewState.bank, initialViewState.startDate, initialViewState.endDate));
   const [bank, setBank] = useState(initialViewState.bank);
@@ -365,6 +387,22 @@ export function DashboardPage({ profile }: { profile?: UserProfile | null }) {
     }
   }
 
+  async function cleanupLegacyGmailTransactions() {
+    setLoading(true);
+    try {
+      setStatus("Cleaning up legacy Gmail transactions");
+      const result = await cleanupGmail({ bank });
+      await load({ force: true });
+      showToast(`Cleanup complete: ignored ${result.ignored} legacy transactions`, "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Cleanup failed";
+      setStatus(message);
+      showToast(message, "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function exportCsv() {
     const header = ["Date", "Merchant", "Category", "Type", "Amount", "Source"];
     const rows = transactions.map((transaction) => [
@@ -437,6 +475,7 @@ export function DashboardPage({ profile }: { profile?: UserProfile | null }) {
         onExportCsv={exportCsv}
         onExportPdf={exportPdf}
         onRefresh={refreshWithSync}
+        onOpenProfile={onOpenProfile}
         onToggleTheme={() => setDarkMode((current) => !current)}
       />
 
@@ -451,6 +490,7 @@ export function DashboardPage({ profile }: { profile?: UserProfile | null }) {
         transactionCount={transactions.length}
         onBankChange={setBank}
         onEndDateChange={setEndDate}
+        onRefresh={refreshWithSync}
         onPresetChange={setDatePreset}
         onStartDateChange={setStartDate}
       />
@@ -612,14 +652,19 @@ export function DashboardPage({ profile }: { profile?: UserProfile | null }) {
               Showing {firstVisibleTransaction}-{pageEndIndex} of {transactions.length}
             </span>
           </div>
-          <label className="page-size-control">
-            Rows
-            <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
-              {pageSizeOptions.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-          </label>
+          <div className="section-header-actions">
+            <button type="button" className="secondary" onClick={cleanupLegacyGmailTransactions} disabled={loading}>
+              {loading ? "Working..." : "Clean legacy Gmail rows"}
+            </button>
+            <label className="page-size-control">
+              Rows
+              <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+                {pageSizeOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
         {transactions.length ? (
           <>
@@ -637,21 +682,31 @@ export function DashboardPage({ profile }: { profile?: UserProfile | null }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleTransactions.map((transaction) => (
-                    <tr key={transaction.id}>
-                      <td>{displayDate(transaction.transaction_date)}</td>
-                      <td>
-                        <span className="merchant-cell"><span>{transaction.merchant.slice(0, 1).toUpperCase()}</span>{transaction.merchant}</span>
-                      </td>
-                      <td>
-                        <input defaultValue={transaction.category} onBlur={(event) => saveCategory(transaction, event.target.value)} />
-                      </td>
-                      <td><span className={`type-pill ${transaction.type}`}>{transaction.type}</span></td>
-                      <td className={transaction.type === "credit" ? "amount-credit" : "amount-debit"}>{transaction.type === "credit" ? "+" : "-"}{formatCurrency(transaction.amount)}</td>
-                      <td>{transaction.source}</td>
-                      <td><Save size={16} /></td>
-                    </tr>
-                  ))}
+                  {visibleTransactions.map((transaction) => {
+                    const sender = transaction.source === "gmail" ? extractSender(transaction.raw_text) : "";
+                    const displayMerchant = getDisplayMerchant(transaction);
+                    return (
+                      <tr key={transaction.id}>
+                        <td>{displayDate(transaction.transaction_date)}</td>
+                        <td>
+                          <span className="merchant-cell">
+                            <span aria-hidden="true">{displayMerchant.slice(0, 1).toUpperCase()}</span>
+                            <span className="merchant-cell-copy">
+                              <strong>{displayMerchant}</strong>
+                              {sender && displayMerchant !== sender ? <small>Sender: {sender}</small> : null}
+                            </span>
+                          </span>
+                        </td>
+                        <td>
+                          <input defaultValue={transaction.category} onBlur={(event) => saveCategory(transaction, event.target.value)} />
+                        </td>
+                        <td><span className={`type-pill ${transaction.type}`}>{transaction.type}</span></td>
+                        <td className={transaction.type === "credit" ? "amount-credit" : "amount-debit"}>{transaction.type === "credit" ? "+" : "-"}{formatCurrency(transaction.amount)}</td>
+                        <td>{transaction.source}</td>
+                        <td><Save size={16} /></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -690,6 +745,7 @@ function DashboardHeader({
   onExportCsv,
   onExportPdf,
   onRefresh,
+  onOpenProfile,
   onToggleTheme,
 }: {
   bank: string;
@@ -700,6 +756,7 @@ function DashboardHeader({
   onExportCsv: () => void;
   onExportPdf: () => void;
   onRefresh: () => void;
+  onOpenProfile?: () => void;
   onToggleTheme: () => void;
 }) {
   return (
@@ -717,10 +774,10 @@ function DashboardHeader({
         </button>
         <button type="button" onClick={onExportCsv}><Download size={18} /><span>CSV</span></button>
         <button type="button" onClick={onExportPdf}><FileDown size={18} /><span>PDF</span></button>
-        <div className="profile-menu">
+        <button type="button" className="profile-menu" onClick={onOpenProfile} aria-label="Open profile">
           {profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : <UserCircle size={22} />}
           <span>{getInitials(profile)}</span>
-        </div>
+        </button>
       </div>
     </header>
   );
@@ -819,7 +876,7 @@ function DashboardFilters({
 
 function StatCard({ icon, label, signed, text, tone, trend, value }: { icon: ReactNode; label: string; signed?: boolean; text?: string; tone: string; trend: number; value?: number }) {
   const positive = trend >= 0;
-  const display = text ?? `${signed && Number(value) < 0 ? "-" : ""}${formatCompactCurrency(Number(value ?? 0))}`;
+  const display = text ?? `${signed && Number(value) < 0 ? "-" : ""}${formatIndianCurrency(Number(value ?? 0))}`;
   return (
     <article className={`metric ${tone}`}>
       <div className="metric-icon">{icon}</div>

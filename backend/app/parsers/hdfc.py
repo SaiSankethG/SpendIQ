@@ -8,24 +8,29 @@ class HDFCEmailParser(BankEmailParser):
     bank = "HDFC"
     sender_phrase = "alerts@hdfcbank.bank.in"
     subject_phrase = "account update for your hdfc bank a/c"
+    transaction_details_phrase = "transaction details"
     debit_phrases = (
         "u have made a upi tranx",
         "you have made a upi transaction",
         "upi transaction",
         "debited",
-        "debit",
+        "debited from",
     )
     credit_phrases = (
         "credited",
-        "credit card",
         "credit of",
         "amount credited",
-        "credit",
+        "successfully credited",
+        "credited to",
     )
     amount_pattern = re.compile(r"(?:rs\.?|inr)\s*([0-9,]+(?:\.[0-9]{1,2})?)", re.IGNORECASE)
+    sender_pattern = re.compile(r"\bsender:\s*(.+?)(?:\s*\(vpa:|\.|\n|$)", re.IGNORECASE)
     debit_merchant_pattern = re.compile(r"\bto\s+([A-Z0-9 ._&-]+?)(?:\.|,|\n|$)", re.IGNORECASE)
     credit_merchant_pattern = re.compile(r"\bfrom\s+([A-Z0-9 ._&-]+?)(?:\.|,|\n|$)", re.IGNORECASE)
-    reference_pattern = re.compile(r"(?:ref(?:erence)?|upi ref|txn)\s*(?:no\.?|id)?[:\s-]*([A-Z0-9]+)", re.IGNORECASE)
+    reference_pattern = re.compile(
+        r"\b(?:upi reference(?:\s+no\.?)?|upi ref(?:\s+no\.?)?|reference(?:\s+no\.?)?|ref(?:\s+no\.?)?|txn(?:\s+no\.?)?)\s*[:\s-]*([A-Z0-9]+)",
+        re.IGNORECASE,
+    )
     debit_amount_pattern = re.compile(r"(?:debited|paid|sent|spent|transferred)", re.IGNORECASE)
     credit_amount_pattern = re.compile(r"(?:credited|received|deposited)", re.IGNORECASE)
 
@@ -57,13 +62,24 @@ class HDFCEmailParser(BankEmailParser):
         has_amount = bool(self.amount_pattern.search(text))
         has_debit_signal = any(phrase in normalized for phrase in self.debit_phrases)
         has_credit_signal = any(phrase in normalized for phrase in self.credit_phrases)
-        return is_hdfc_alert and has_amount and (has_debit_signal or has_credit_signal)
+        has_transaction_details = self.transaction_details_phrase in normalized
+
+        if not (is_hdfc_alert and has_amount and has_transaction_details and (has_debit_signal or has_credit_signal)):
+            return False
+
+        if has_credit_signal:
+            return bool(self.sender_pattern.search(text) or self.credit_merchant_pattern.search(text)) and bool(self.reference_pattern.search(text))
+
+        return bool(self.debit_merchant_pattern.search(text)) and bool(self.reference_pattern.search(text))
 
     def parse(self, text: str, received_date: date) -> ParsedTransaction:
         tx_type = "credit" if self._is_credit(text) else "debit"
         amount = self._extract_amount(text)
 
-        merchant_match = self.credit_merchant_pattern.search(text) if tx_type == "credit" else self.debit_merchant_pattern.search(text)
+        if tx_type == "credit":
+            merchant_match = self.sender_pattern.search(text) or self.credit_merchant_pattern.search(text)
+        else:
+            merchant_match = self.debit_merchant_pattern.search(text)
         merchant = merchant_match.group(1).strip(" .,-") if merchant_match else "Unknown Merchant"
 
         reference_match = self.reference_pattern.search(text)

@@ -76,6 +76,13 @@ export async function watchGmail() {
   return request<{ status: string }>("/gmail/watch", { method: "POST" });
 }
 
+export async function cleanupGmail(payload: { bank: string }) {
+  return request<{ scanned: number; ignored: number }>("/gmail/cleanup", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getBudgetStatus(month: string) {
   return request<BudgetStatus[]>(`/budgets/status?month=${month}`);
 }

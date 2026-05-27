@@ -614,6 +614,12 @@ p {
   justify-content: space-between;
 }
 
+.section-header-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
 .header-actions {
   align-items: center;
   display: flex;
@@ -1077,7 +1083,7 @@ button:disabled {
   gap: 9px;
 }
 
-.merchant-cell span {
+.merchant-cell > span:first-child {
   align-items: center;
   background: var(--color-bg-soft);
   border-radius: 50%;
@@ -1088,6 +1094,27 @@ button:disabled {
   height: 28px;
   justify-items: center;
   width: 28px;
+}
+
+.merchant-cell-copy {
+  align-items: flex-start;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.merchant-cell-copy strong {
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.merchant-cell-copy small {
+  color: var(--color-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .type-pill {

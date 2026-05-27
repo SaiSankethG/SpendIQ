@@ -12,9 +12,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.entities import GmailMessage, GmailWatch, OAuthToken, User
+from app.models.entities import GmailMessage, GmailWatch, OAuthToken, Transaction, User
 from app.parsers.registry import parser_registry
-from app.schemas.transactions import GmailSyncRequest, TransactionCreate
+from app.schemas.transactions import GmailCleanupRequest, GmailSyncRequest, TransactionCreate
 from app.services.category_service import category_service
 from app.services.transaction_service import transaction_service
 
@@ -219,6 +219,32 @@ class GmailService:
                 status_code=401,
                 detail="Google authorization is no longer valid. Please reconnect your Gmail account.",
             ) from exc
+
+    def cleanup_legacy_false_positives(self, db: Session, user_id: str, request: GmailCleanupRequest) -> dict[str, int]:
+        """Ignore old Gmail imports that no longer match the stricter parser rules."""
+        parser = parser_registry.get(request.bank)
+        transactions = (
+            db.query(Transaction)
+            .filter(
+                Transaction.user_id == user_id,
+                Transaction.bank == request.bank,
+                Transaction.source == "gmail",
+                Transaction.is_ignored.is_(False),
+            )
+            .order_by(Transaction.transaction_date.desc(), Transaction.created_at.desc())
+            .all()
+        )
+
+        scanned = ignored = 0
+        for transaction in transactions:
+            scanned += 1
+            if not parser.can_parse(transaction.raw_text):
+                transaction.is_ignored = True
+                ignored += 1
+
+        db.commit()
+        logger.info("Cleanup finished for user %s: scanned=%s ignored=%s", user_id, scanned, ignored)
+        return {"scanned": scanned, "ignored": ignored}
         except Exception as exc:
             logger.exception("Gmail watch registration failed for user %s", user_id)
             raise HTTPException(

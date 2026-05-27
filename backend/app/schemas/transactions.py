@@ -32,6 +32,10 @@ class TransactionUpdate(BaseModel):
     is_ignored: bool | None = None
 
 
+class GmailCleanupRequest(BaseModel):
+    bank: str = "HDFC"
+
+
 class GmailSyncRequest(BaseModel):
     bank: str = "HDFC"
     mode: str = Field(pattern="^(last_n|date_range)$")

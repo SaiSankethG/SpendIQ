@@ -171,7 +171,7 @@ function App() {
   const content = useMemo(() => {
     if (!profile) return null;
     if (page === "dashboard" || page === "transactions" || page === "analytics" || page === "reports" || page === "notifications") {
-      return <DashboardPage profile={profile} />;
+      return <DashboardPage profile={profile} onOpenProfile={() => navigate("profile")} />;
     }
     if (page === "imports") return <ImportsPage />;
     if (page === "budgets") return <BudgetsPage />;
