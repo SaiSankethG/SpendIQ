@@ -1,13 +1,30 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Mail } from "lucide-react";
 import { devLogin, redirectToGoogleOAuth } from "../api/client";
 import type { UserProfile } from "../types";
 
+const authErrorMessages: Record<string, string> = {
+  missing_scopes: "Google did not grant Gmail access. Please reconnect and approve the requested permissions.",
+  oauth_failed: "Google sign-in failed. Please try again.",
+};
+
 export function LoginPage({ onLogin }: { onLogin: (user: UserProfile) => void }) {
   const [email, setEmail] = useState("you@example.com");
-  const [name, setName] = useState("Expense Tracker User");
+  const [name, setName] = useState("SpendIQ User");
   const [error, setError] = useState("");
   const [isDevMode, setIsDevMode] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authError = params.get("auth_error");
+    if (authError) {
+      setError(authErrorMessages[authError] ?? "Google sign-in failed. Please try again.");
+      params.delete("auth_error");
+      const nextQuery = params.toString();
+      const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+      window.history.replaceState({}, document.title, nextUrl);
+    }
+  }, []);
 
   async function devLoginHandler() {
     setError("");
@@ -21,6 +38,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: UserProfile) => void })
   }
 
   function googleLoginHandler() {
+    setError("");
     redirectToGoogleOAuth();
   }
 
@@ -29,7 +47,7 @@ export function LoginPage({ onLogin }: { onLogin: (user: UserProfile) => void })
       <section className="auth-panel">
         <div className="brand large">
           <Mail size={28} />
-          <span>Personal Expense Tracker</span>
+          <span>SpendIQ</span>
         </div>
         <h1>Sign in with Google</h1>
         <p>
@@ -80,4 +98,3 @@ export function LoginPage({ onLogin }: { onLogin: (user: UserProfile) => void })
     </main>
   );
 }
-

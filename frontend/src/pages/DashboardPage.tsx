@@ -717,10 +717,6 @@ function DashboardHeader({
         </button>
         <button type="button" onClick={onExportCsv}><Download size={18} /><span>CSV</span></button>
         <button type="button" onClick={onExportPdf}><FileDown size={18} /><span>PDF</span></button>
-        <button type="button" className="primary" onClick={onRefresh} disabled={loading}>
-          <RefreshCw className={loading ? "spin" : ""} size={18} />
-          <span>{loading ? "Refreshing" : "Refresh"}</span>
-        </button>
         <div className="profile-menu">
           {profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : <UserCircle size={22} />}
           <span>{getInitials(profile)}</span>
@@ -741,6 +737,7 @@ function DashboardFilters({
   transactionCount,
   onBankChange,
   onEndDateChange,
+  onRefresh,
   onPresetChange,
   onStartDateChange,
 }: {
@@ -754,6 +751,7 @@ function DashboardFilters({
   transactionCount: number;
   onBankChange: (bank: string) => void;
   onEndDateChange: (date: string) => void;
+  onRefresh: () => void;
   onPresetChange: (preset: QuickRange) => void;
   onStartDateChange: (date: string) => void;
 }) {
@@ -804,6 +802,10 @@ function DashboardFilters({
 
         <div className="toolbar-actions">
           <PushNotificationControl />
+          <button type="button" className="primary" onClick={onRefresh} disabled={loading}>
+            <RefreshCw className={loading ? "spin" : ""} size={18} />
+            <span>{loading ? "Refreshing" : "Refresh"}</span>
+          </button>
         </div>
       </div>
 

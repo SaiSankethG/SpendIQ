@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 
 class GmailService:
+    bank_queries = {
+        "HDFC": 'from:alerts@hdfcbank.bank.in subject:"Account update for your HDFC Bank A/c"',
+    }
+
     scopes = [
         "openid",
         "https://www.googleapis.com/auth/userinfo.email",
@@ -30,12 +34,15 @@ class GmailService:
     ]
 
     def build_query(self, request: GmailSyncRequest) -> str:
-        query = ""
+        parts: list[str] = []
+        bank_query = self.bank_queries.get(request.bank.upper())
+        if bank_query:
+            parts.append(bank_query)
         if request.mode == "date_range" and request.start_date and request.end_date:
             # Gmail's before: operator is exclusive, so advance one day to include the selected end date.
             inclusive_end = request.end_date + timedelta(days=1)
-            query = f"after:{request.start_date.strftime('%Y/%m/%d')} before:{inclusive_end.strftime('%Y/%m/%d')}"
-        return query
+            parts.append(f"after:{request.start_date.strftime('%Y/%m/%d')} before:{inclusive_end.strftime('%Y/%m/%d')}")
+        return " ".join(parts)
 
     def _get_client_credentials(self, settings):
         if settings.google_client_id and settings.google_client_secret:
@@ -286,7 +293,21 @@ class GmailService:
     def _extract_text(self, message: dict) -> str:
         import base64
 
-        snippets = [message.get("snippet", "")]
+        snippets = []
+        headers = message.get("payload", {}).get("headers", [])
+        header_map = {header.get("name", "").lower(): header.get("value", "") for header in headers}
+
+        from_header = header_map.get("from")
+        if from_header:
+            snippets.append(f"From: {from_header}")
+
+        subject_header = header_map.get("subject")
+        if subject_header:
+            snippets.append(f"Subject: {subject_header}")
+
+        snippet = message.get("snippet", "")
+        if snippet:
+            snippets.append(snippet)
 
         def collect_parts(part: dict) -> None:
             body = part.get("body", {})

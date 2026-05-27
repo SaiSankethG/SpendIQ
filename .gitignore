@@ -2,6 +2,7 @@
 .gitignore
 .DS_Store
 .playwright-mcp/
+README_FINAL.md
 
 # Python
 *.py[cod]

@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "Personal Expense Tracker"
+    app_name: str = "SpendIQ"
     environment: str = "development"
     database_url: str
     backend_base_url: str = "http://localhost:8000"

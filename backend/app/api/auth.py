@@ -25,6 +25,12 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 
+OAUTH_AUTHORIZATION_URL_OPTIONS = {
+    "access_type": "offline",
+    "prompt": "consent",
+    "include_granted_scopes": "true",
+}
+
 
 class DevLoginRequest(BaseModel):
     email: str
@@ -95,7 +101,7 @@ def dev_login(payload: DevLoginRequest, db: Session = Depends(get_db)) -> AuthRe
 def google_login(settings=Depends(get_settings)):
     """Redirect user to Google OAuth consent screen."""
     flow = get_oauth_flow(settings)
-    authorization_url, state = flow.authorization_url(access_type="offline", prompt="consent")
+    authorization_url, state = flow.authorization_url(**OAUTH_AUTHORIZATION_URL_OPTIONS)
     
     # In production, store state in session/cache to verify on callback
     return {"authorization_url": authorization_url, "state": state}
@@ -121,6 +127,18 @@ def google_callback(
         flow.fetch_token(authorization_response=str(request.url))
 
         credentials = flow.credentials
+
+        granted_scopes = set(credentials.scopes or [])
+        requested_scopes = set(SCOPES)
+        missing_scopes = requested_scopes - granted_scopes
+        if missing_scopes:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Google did not grant all required permissions. "
+                    "Please reconnect and approve Gmail access again."
+                ),
+            )
 
         # Get user info from Google
         user_info_response = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {credentials.token}"})
@@ -162,5 +180,9 @@ def google_callback(
         frontend_redirect = f"{settings.frontend_base_url}/dashboard?token={app_token}"
         return RedirectResponse(url=frontend_redirect)
 
+    except HTTPException:
+        error_url = f"{settings.frontend_base_url}/?auth_error=missing_scopes"
+        return RedirectResponse(url=error_url)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"OAuth callback failed: {str(e)}")
+        error_url = f"{settings.frontend_base_url}/?auth_error=oauth_failed"
+        return RedirectResponse(url=error_url)
