@@ -267,12 +267,6 @@ function App() {
           })}
         </motion.nav>
 
-        {/* <motion.div className="sidebar-mini-panel" initial={false} animate={{ opacity: sidebarCollapsed && !mobileMenuOpen ? 0 : 1 }} transition={{ duration: 0.18 }}>
-          <span><Sparkles size={15} /> Smart insight</span>
-          <strong>Subscriptions up 12%</strong>
-          <small>Review recurring spend before month end.</small>
-        </motion.div> */}
-
         <motion.button className="quick-action" type="button" onClick={() => navigate("imports")} title={sidebarCollapsed ? "Quick import" : undefined} whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}>
           <Plus size={18} />
           <span>Quick import</span>
@@ -283,7 +277,7 @@ function App() {
             {profile.avatar_url ? <img src={profile.avatar_url} alt="" /> : <span className="avatar-fallback">{getInitials(profile)}</span>}
             <span className="user-copy">
               <strong>{profile.name || "Finance user"}</strong>
-              <small>Premium</small>
+              <small>Connected</small>
             </span>
           </button>
           <div className="footer-actions">

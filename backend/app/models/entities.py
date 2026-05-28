@@ -30,6 +30,8 @@ class User(Base):
 
     oauth_token: Mapped["OAuthToken"] = relationship(back_populates="user", uselist=False)
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="user")
+    settings: Mapped["UserSettings"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
+    bank_connections: Mapped[list["BankConnection"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class OAuthToken(Base):
@@ -109,3 +111,52 @@ class GmailWatch(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
+class UserSettings(Base):
+    __tablename__ = "user_settings"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    gmail_sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    auto_import: Mapped[bool] = mapped_column(Boolean, default=True)
+    import_frequency: Mapped[str] = mapped_column(String(16), default="instant")
+    duplicate_protection: Mapped[bool] = mapped_column(Boolean, default=True)
+    auto_categorization: Mapped[bool] = mapped_column(Boolean, default=True)
+    push_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
+    email_alerts: Mapped[bool] = mapped_column(Boolean, default=True)
+    sync_failure_alerts: Mapped[bool] = mapped_column(Boolean, default=True)
+    weekly_reports: Mapped[bool] = mapped_column(Boolean, default=True)
+    budget_alerts: Mapped[bool] = mapped_column(Boolean, default=True)
+    ai_categorization: Mapped[bool] = mapped_column(Boolean, default=True)
+    smart_insights: Mapped[bool] = mapped_column(Boolean, default=True)
+    merchant_detection: Mapped[bool] = mapped_column(Boolean, default=True)
+    theme: Mapped[str] = mapped_column(String(16), default="system")
+    accent_color: Mapped[str] = mapped_column(String(32), default="emerald")
+    compact_mode: Mapped[bool] = mapped_column(Boolean, default=False)
+    animations_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    notification_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    data_encryption_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    gmail_readonly_scope: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped[User] = relationship(back_populates="settings")
+
+
+class BankConnection(Base):
+    __tablename__ = "bank_connections"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    bank_name: Mapped[str] = mapped_column(String(64), index=True)
+    connected: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    last_sync: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    statement_count: Mapped[int] = mapped_column(default=0)
+    sync_health: Mapped[str] = mapped_column(String(16), default="healthy")
+    access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user: Mapped[User] = relationship(back_populates="bank_connections")

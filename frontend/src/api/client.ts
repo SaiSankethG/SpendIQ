@@ -1,4 +1,4 @@
-import type { AnalyticsSummary, BudgetStatus, Transaction, UserProfile } from "../types";
+import type { AnalyticsSummary, BudgetStatus, ProfileSecurity, Transaction, UserProfile, UserSettings } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
 
@@ -48,6 +48,30 @@ export function redirectToGoogleOAuth() {
 
 export async function getProfile() {
   return request<UserProfile>("/profile");
+}
+
+export async function getProfileSecurity() {
+  return request<ProfileSecurity>("/profile/security");
+}
+
+export async function getSettings() {
+  return request<UserSettings>("/settings");
+}
+
+export async function patchSettings(payload: Partial<UserSettings>) {
+  return request<{ status: string }>("/settings", { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function patchImportSettings(payload: Partial<Pick<UserSettings, "auto_import" | "import_frequency" | "duplicate_protection" | "auto_categorization">>) {
+  return request<{ status: string }>("/settings/imports", { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function patchNotificationSettings(payload: Partial<Pick<UserSettings, "push_notifications" | "email_alerts" | "sync_failure_alerts" | "weekly_reports" | "budget_alerts">>) {
+  return request<{ status: string }>("/settings/notifications", { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function patchPreferences(payload: { theme?: string; accentColor?: string; compactMode?: boolean; animationsEnabled?: boolean }) {
+  return request<{ status: string }>("/settings/preferences", { method: "PATCH", body: JSON.stringify(payload) });
 }
 
 export async function getAnalytics(params: URLSearchParams) {
