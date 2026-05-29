@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 
 class GmailService:
     bank_queries = {
-        "HDFC": 'from:alerts@hdfcbank.bank.in subject:"Account update for your HDFC Bank A/c"',
+        # Keep the Gmail search broad enough to catch HDFC templates with varying subjects.
+        # The parser does the stricter filtering once the message body is fetched.
+        "HDFC": "from:alerts@hdfcbank.bank.in",
     }
 
     scopes = [

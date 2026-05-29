@@ -27,6 +27,54 @@ class HDFCEmailParserTests(unittest.TestCase):
         self.assertEqual(parsed.merchant, "ABC STORE")
         self.assertEqual(parsed.reference_id, "UPI12345")
 
+    def test_parses_debit_alert_without_transaction_details(self) -> None:
+        text = (
+            "From: HDFC Bank InstaAlerts <alerts@hdfcbank.bank.in>\n"
+            "Subject: Account update for your HDFC Bank A/c\n"
+            "Dear Customer, you have made a UPI transaction of INR 375.00 "
+            "to KIRANA MART."
+        )
+
+        self.assertTrue(self.parser.can_parse(text))
+        parsed = self.parser.parse(text, date(2026, 5, 24))
+        self.assertEqual(parsed.type, "debit")
+        self.assertEqual(parsed.amount, 375.0)
+        self.assertEqual(parsed.merchant, "KIRANA MART")
+
+    def test_parses_debit_alert_with_vpa_merchant_name(self) -> None:
+        text = (
+            "From: HDFC Bank InstaAlerts <alerts@hdfcbank.bank.in>\n"
+            "Subject: Account update for your HDFC Bank A/c\n"
+            "Dear Customer,\n"
+            "Greetings from HDFC Bank!\n"
+            "Rs.70.00 is debited from your account ending 1575 towards VPA "
+            "paytm.s1rloeo@pty (CHAI BISCUIT) on 29-05-26.\n"
+            "\n"
+            "UPI transaction reference no.: 967238754212.\n"
+        )
+
+        self.assertTrue(self.parser.can_parse(text))
+        parsed = self.parser.parse(text, date(2026, 5, 29))
+        self.assertEqual(parsed.type, "debit")
+        self.assertEqual(parsed.amount, 70.0)
+        self.assertEqual(parsed.merchant, "CHAI BISCUIT")
+        self.assertEqual(parsed.reference_id, "967238754212")
+
+    def test_parses_debit_card_transaction_merchant(self) -> None:
+        text = (
+            "From: HDFC Bank InstaAlerts <alerts@hdfcbank.bank.in>\n"
+            "Subject: Account update for your HDFC Bank A/c\n"
+            "Dear Customer, your debit card was used for INR 499.00 at CHAI BISCUIT.\n"
+            "UPI Reference No.: DC12345"
+        )
+
+        self.assertTrue(self.parser.can_parse(text))
+        parsed = self.parser.parse(text, date(2026, 5, 29))
+        self.assertEqual(parsed.type, "debit")
+        self.assertEqual(parsed.amount, 499.0)
+        self.assertEqual(parsed.merchant, "CHAI BISCUIT")
+        self.assertEqual(parsed.reference_id, "DC12345")
+
     def test_parses_credit_alert(self) -> None:
         text = (
             "From: HDFC Bank InstaAlerts <alerts@hdfcbank.bank.in>\n"

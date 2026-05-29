@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -22,6 +22,7 @@ class TransactionCreate(TransactionBase):
 class TransactionRead(TransactionBase):
     id: str
     is_ignored: bool
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 

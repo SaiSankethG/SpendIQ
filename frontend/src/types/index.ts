@@ -10,6 +10,7 @@ export type Transaction = {
   reference_id: string | null;
   raw_text: string;
   is_ignored: boolean;
+  created_at: string;
 };
 
 export type ChartPoint = {

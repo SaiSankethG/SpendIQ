@@ -5,18 +5,13 @@ import {
   BarChart3,
   Bell,
   ChevronDown,
-  FileBarChart,
   FileUp,
   Gauge,
   LogOut,
   Menu,
-  PieChart,
   Plus,
-  ReceiptText,
-  Search,
   Settings,
   ShieldCheck,
-  Sparkles,
   User,
   WalletCards,
   X,
@@ -26,6 +21,7 @@ import { ImportsPage } from "./pages/ImportsPage";
 import { BudgetsPage } from "./pages/BudgetsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { NotificationsPage } from "./pages/NotificationsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { getProfile, hasAuthToken } from "./api/client";
 import type { UserProfile } from "./types";
@@ -35,28 +31,16 @@ type Page = "dashboard" | "transactions" | "analytics" | "budgets" | "imports" |
 
 const navItems: Array<{ page: Page; label: string; icon: React.ElementType; badge?: string }> = [
   { page: "dashboard", label: "Dashboard", icon: Gauge },
-  { page: "transactions", label: "Transactions", icon: ReceiptText },
-  { page: "analytics", label: "Analytics", icon: PieChart },
   { page: "budgets", label: "Budgets", icon: WalletCards },
   { page: "imports", label: "Imports", icon: FileUp },
-  { page: "reports", label: "Reports", icon: FileBarChart },
-  { page: "notifications", label: "Notifications", icon: Bell, badge: "3" },
+  { page: "notifications", label: "Notifications", icon: Bell },
   { page: "settings", label: "Settings", icon: Settings },
   { page: "profile", label: "Profile", icon: User },
 ];
 
 function pageFromPath(pathname: string): Page {
   const page = pathname.replace(/^\/+/, "").split("/")[0];
-  if (
-    page === "transactions" ||
-    page === "analytics" ||
-    page === "budgets" ||
-    page === "imports" ||
-    page === "reports" ||
-    page === "notifications" ||
-    page === "settings" ||
-    page === "profile"
-  ) {
+  if (page === "budgets" || page === "imports" || page === "notifications" || page === "settings" || page === "profile") {
     return page;
   }
   return "dashboard";
@@ -170,11 +154,12 @@ function App() {
 
   const content = useMemo(() => {
     if (!profile) return null;
-    if (page === "dashboard" || page === "transactions" || page === "analytics" || page === "reports" || page === "notifications") {
+    if (page === "dashboard") {
       return <DashboardPage profile={profile} onOpenProfile={() => navigate("profile")} />;
     }
     if (page === "imports") return <ImportsPage />;
     if (page === "budgets") return <BudgetsPage />;
+    if (page === "notifications") return <NotificationsPage />;
     if (page === "settings") return <SettingsPage />;
     return <ProfilePage profile={profile} onLogout={handleLogout} />;
   }, [page, profile]);
